@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  Sparkles,
   Search,
   Check,
   X,
@@ -30,12 +29,12 @@ export default function AdminWorkspace({ onRefreshData }: AdminWorkspaceProps) {
   const [usersList, setUsersList] = useState<User[]>([]);
   const [fraudLogsList, setFraudLogsList] = useState<FraudLog[]>([]);
 
-  // Platform properties values
+  // Propriétés globales de la plateforme
   const [marginPercent, setMarginPercent] = useState(40);
   const [minGpsDistanceMeters, setMinGpsDistanceMeters] = useState(50);
   const [configSuccess, setConfigSuccess] = useState("");
 
-  // Feedback inputs
+  // Retours (feedback) de modération
   const [subFeedback, setSubFeedback] = useState<Record<string, string>>({});
 
   const fetchAdminStats = async () => {
@@ -44,18 +43,13 @@ export default function AdminWorkspace({ onRefreshData }: AdminWorkspaceProps) {
       if (resp.ok) {
         const data = await resp.json();
         setStats(data.stats);
-        
-        // Filter out only pending submissions
-        setSubmissionsQueue(data.allSubmissions.filter((s: any) => s.status === "pending"));
-        setWithdrawalsQueue(data.allWithdrawals.filter((w: any) => w.status === "pending"));
-        setUsersList(data.allUsers);
+        setSubmissionsQueue(data.submissionsQueue || []);
+        setWithdrawalsQueue(data.withdrawalsQueue || []);
+        setUsersList(data.users || []);
         setFraudLogsList(data.fraudLogs || []);
-
-        setMarginPercent(data.stats.marginPercent || 40);
-        setMinGpsDistanceMeters(data.stats.minGpsDistanceMeters || 50);
       }
-    } catch (err) {
-      console.warn("Failed to fetch admin statistics", err);
+    } catch {
+      console.log("Erreur lors de la récupération des données admin.");
     }
   };
 
@@ -63,17 +57,14 @@ export default function AdminWorkspace({ onRefreshData }: AdminWorkspaceProps) {
     fetchAdminStats();
   }, []);
 
-  // Submission validation web handler
-  const handleSubmissionAction = async (submissionId: string, action: "approve" | "reject") => {
-    const feedbackText = subFeedback[submissionId] || (action === "approve" ? "Relevé validé !" : "Photo erronée ou hors zone.");
+  const handleModerateSubmission = async (id: string, status: "approved" | "rejected") => {
     try {
-      const resp = await fetch("/api/submissions/action", {
-        method: "POST",
+      const resp = await fetch(`/api/admin/submissions/${id}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          submissionId,
-          action,
-          feedback: feedbackText
+          status,
+          feedback: subFeedback[id] || ""
         })
       });
 
@@ -81,346 +72,254 @@ export default function AdminWorkspace({ onRefreshData }: AdminWorkspaceProps) {
         fetchAdminStats();
         onRefreshData();
       }
-    } catch (err) {
-      console.warn(err);
+    } catch {
+      alert("Erreur réseau lors de la modération.");
     }
   };
 
-  // Withdrawal cashout manual release trigger
-  const handleApproveWithdrawal = async (withdrawalId: string) => {
+  const handleProcessWithdrawal = async (id: string, status: "completed" | "failed") => {
     try {
-      const resp = await fetch("/api/withdrawals/approve", {
-        method: "POST",
+      const resp = await fetch(`/api/admin/withdrawals/${id}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ withdrawalId })
+        body: JSON.stringify({ status })
       });
+
       if (resp.ok) {
         fetchAdminStats();
         onRefreshData();
       }
-    } catch (err) {
-      console.warn(err);
+    } catch {
+      alert("Erreur réseau lors du traitement du retrait.");
     }
   };
 
-  // Save admin property configuration
-  const handleSaveConfig = async (e: React.FormEvent) => {
+  const handleUpdateConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     setConfigSuccess("");
     try {
       const resp = await fetch("/api/admin/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          marginPercent,
-          minGpsDistanceMeters
-        })
+        body: JSON.stringify({ marginPercent, minGpsDistanceMeters })
       });
       if (resp.ok) {
-        setConfigSuccess("Paramètres officiels de la plateforme enregistrés !");
-        setTimeout(() => setConfigSuccess(""), 4000);
-        fetchAdminStats();
+        setConfigSuccess("Paramètres système mis à jour avec succès !");
+        setTimeout(() => setConfigSuccess(""), 3000);
       }
-    } catch (err) {
-      console.warn(err);
+    } catch {
+      alert("Erreur lors de la sauvegarde de la configuration.");
     }
   };
 
-  if (!stats) {
-    return (
-      <div className="p-8 text-center text-slate-400 text-xs italic bg-white rounded-2xl border">
-        Chargement des KPIs admin sécurisés...
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col space-y-6">
-
-      {/* Admin KPIs overall view */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        
-        <div className="bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-            <TrendingUp className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-[10px] uppercase font-bold text-slate-400">Revenus de la Plateforme</p>
-            <h3 className="text-2xl font-black text-slate-900 mt-0.5">{stats.platformRevenuesFcfa.toLocaleString()} <span className="text-xs font-normal">FCFA</span></h3>
-            <span className="text-[9px] text-emerald-600 font-bold">Marge : {stats.marginPercent}%</span>
-          </div>
+    <div className="min-h-screen bg-[#0B0F19] text-slate-100 p-4 md:p-8">
+      
+      {/* SECTION BANNER KPI SUPER-ADMIN */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl text-left">
+          <span className="text-[10px] font-bold text-slate-500 uppercase">Volume Collectes</span>
+          <div className="text-xl font-black text-white mt-1">{stats?.totalSubmissions || 0}</div>
         </div>
-
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
-            <Users className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-[10px] uppercase font-bold text-slate-400">Réseau Utilisateurs</p>
-            <h3 className="text-2xl font-black text-slate-900 mt-0.5">{stats.totalUsers}</h3>
-            <span className="text-[9px] text-slate-400 font-mono">Agents: {stats.agentsCount} | Clients: {stats.clientsCount}</span>
-          </div>
+        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl text-left">
+          <span className="text-[10px] font-bold text-slate-500 uppercase">Alertes GPS</span>
+          <div className="text-xl font-black text-rose-400 mt-1">{fraudLogsList.length}</div>
         </div>
-
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
-          <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
-            <ShieldAlert className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-[10px] uppercase font-bold text-slate-400">Alerte Fraude Loggées</p>
-            <h3 className="text-2xl font-black text-rose-600 mt-0.5">{stats.fraudAlertsCount}</h3>
-            <span className="text-[9px] text-slate-550">Analytique instantanée</span>
-          </div>
+        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl text-left">
+          <span className="text-[10px] font-bold text-slate-500 uppercase">En attente MoMo</span>
+          <div className="text-xl font-black text-yellow-400 mt-1">{withdrawalsQueue.length}</div>
         </div>
-
-        <div className="bg-[#121b15] text-white p-5 rounded-2xl shadow-xl flex items-center gap-4">
-          <div className="p-3 bg-yellow-400 text-slate-900 rounded-xl font-bold">
-            DB229
-          </div>
-          <div>
-            <p className="text-[9px] uppercase font-bold text-emerald-400">Statut Réseau Bénin</p>
-            <h3 className="text-xl font-black italic mt-0.5">ONLINE</h3>
-            <span className="text-[9px] text-slate-350 font-mono">jeanjacquesaguin30@gmail.com</span>
-          </div>
+        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl text-left">
+          <span className="text-[10px] font-bold text-slate-500 uppercase">Chiffre d'Affaires</span>
+          <div className="text-xl font-black text-emerald-400 mt-1">{(stats?.totalVolumeFcfa || 0).toLocaleString()} F</div>
         </div>
-
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* COLONNE PRINCIPALE : FILES D'ATTENTES DE VALIDATION */}
+        <div className="lg:col-span-2 space-y-8">
+          
+          {/* FILE 1 : MODÉRATION DES SOUUMISSIONS AGENTS */}
+          <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800 p-6 rounded-2xl shadow-xl text-left">
+            <h3 className="text-sm font-black text-white mb-4 flex items-center gap-2">
+              <FileCheck className="w-4 h-4 text-emerald-400" />
+              File de Modération des Collectes Terrain
+            </h3>
 
-        {/* List of submissions waiting for review (Left Column) */}
-        <div className="lg:col-span-8 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-6">
-          <div className="flex justify-between items-center border-b pb-3 border-slate-100">
-            <h4 className="font-extrabold text-slate-900 text-md flex items-center gap-1.5 animate-pulse">
-              <FileCheck className="w-5 h-5 text-emerald-600" />
-              File de validation de collectes terrain ({submissionsQueue.length})
-            </h4>
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest font-mono">Données en attente</span>
-          </div>
-
-          {submissionsQueue.length === 0 ? (
-            <div className="p-8 text-center text-slate-400 text-xs italic bg-slate-50 rounded-xl">
-              Félicitations, aucun relevé terrain en attente de vérification !
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {submissionsQueue.map((s) => {
-                const fraudScoreColor =
-                  s.fraudScore === "eleve" ? "bg-red-100 text-red-700 border-red-200" :
-                  s.fraudScore === "moyen" ? "bg-amber-100 text-amber-700 border-amber-200" :
-                  "bg-emerald-100 text-emerald-750 border-emerald-200";
-
-                return (
-                  <div key={s.id} className="p-5 bg-slate-50 border border-slate-200 rounded-2xl space-y-4 relative overflow-hidden">
-                    {/* Corner indicator badge for fraud */}
-                    <div className="absolute top-4 right-4 flex items-center gap-2">
-                      <span className={`px-2 py-0.5 text-[9px] font-black uppercase rounded border ${fraudScoreColor}`}>
-                        Risque Fraude : {s.fraudScore.toUpperCase()}
+            {submissionsQueue.length === 0 ? (
+              <p className="text-xs text-slate-500 italic py-4 border border-dashed border-slate-800 rounded-xl text-center bg-slate-950/30">
+                Aucun rapport en attente de vérification pour le moment.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {submissionsQueue.map((sub) => (
+                  <div key={sub.id} className="p-4 bg-slate-950 border border-slate-850 rounded-xl space-y-3">
+                    <div className="flex justify-between items-start text-xs border-b border-slate-900 pb-2">
+                      <div>
+                        <span className="font-bold text-slate-200 block">Agent : {sub.agentName}</span>
+                        <span className="text-[10px] text-slate-500 font-mono">ID: {sub.id}</span>
+                      </div>
+                      <span className="font-mono text-[10px] bg-slate-900 px-2 py-0.5 rounded border border-slate-800 text-slate-400">
+                        GPS: {sub.gpsLocation.lat.toFixed(4)}, {sub.gpsLocation.lng.toFixed(4)}
                       </span>
                     </div>
 
-                    <div>
-                      <span className="text-[9px] font-bold text-slate-450 uppercase tracking-wider block font-mono">
-                        SOUMISSION REF : {s.id}
-                      </span>
-                      <h5 className="font-extrabold text-sm text-slate-900 mt-0.5">{s.missionTitle}</h5>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Collecteur : <b>{s.agentName} ({s.agentPhone})</b>
-                      </p>
+                    {/* Données de l'enquête */}
+                    <div className="space-y-1 text-xs">
+                      {Object.entries(sub.answers).map(([fId, val]) => (
+                        <p key={fId} className="text-slate-400">
+                          <b className="text-slate-300">{fId} :</b> {val}
+                        </p>
+                      ))}
                     </div>
 
-                    {/* Fraud alert warnings panel */}
-                    {s.fraudAlerts.length > 0 && (
-                      <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-rose-700 text-xs space-y-1">
-                        <span className="font-black flex items-center gap-1">
-                          <AlertTriangle className="w-4 h-4 shrink-0" />
-                          ALERTE FRAUDE LOGIQUE GÉNÉRÉE :
-                        </span>
-                        <ul className="list-disc list-inside text-[11px] text-rose-600 pl-1 space-y-0.5">
-                          {s.fraudAlerts.map((alert, idx) => (
-                            <li key={idx}>{alert}</li>
-                          ))}
-                        </ul>
+                    {/* Image si uploadée */}
+                    {sub.photoBase64 && (
+                      <div className="pt-1">
+                        <img src={sub.photoBase64} alt="Preuve Admin" className="w-32 h-20 object-cover rounded-lg border border-slate-800" />
                       </div>
                     )}
 
-                    {/* Answers table comparison grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <h6 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Réponses du questionnaire</h6>
-                        <div className="bg-white border rounded-xl divide-y divide-slate-100 text-xs">
-                          {Object.entries(s.answers).map(([key, val]) => (
-                            <div key={key} className="p-2.5 flex justify-between gap-4">
-                              <span className="text-slate-500 max-w-[120px] truncate">{key}</span>
-                              <span className="font-bold text-slate-900 inline-block text-right">{val || "true"}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Photo preview container */}
-                      {s.photoUrl && (
-                        <div className="space-y-1.5">
-                          <h6 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Photo fournie par l'agent</h6>
-                          <div className="border rounded-xl overflow-hidden h-36 bg-slate-950 relative">
-                            {s.photoUrl.startsWith("placeholder") ? (
-                              <div className="w-full h-full bg-slate-800 text-slate-500 text-[10px] text-center flex flex-col justify-center items-center">
-                                📷 MOCK PHOTO EN COURS
-                                <span className="text-[8px] text-slate-400">Image Hash: OK</span>
-                              </div>
-                            ) : (
-                              <img src={s.photoUrl} alt="Relevé" className="w-full h-full object-contain" />
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Verification and response action fields */}
-                    <div className="flex flex-col md:flex-row gap-3 pt-3 border-t border-slate-200">
+                    {/* Commentaire de rejet optionnel & Actions */}
+                    <div className="pt-2 flex flex-col sm:flex-row gap-2 items-center justify-between">
                       <input
-                        id={`feedback-field-${s.id}`}
                         type="text"
-                        placeholder="Laisser un commentaire ou motif de rejet..."
-                        value={subFeedback[s.id] || ""}
-                        onChange={(e) => setSubFeedback({ ...subFeedback, [s.id]: e.target.value })}
-                        className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:outline-slate-900"
+                        placeholder="Motif si rejet (ex: Photo floue)..."
+                        value={subFeedback[sub.id] || ""}
+                        onChange={(e) => setSubFeedback({ ...subFeedback, [sub.id]: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none"
                       />
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 shrink-0">
                         <button
-                          id={`reject-sub-${s.id}`}
-                          onClick={() => handleSubmissionAction(s.id, "reject")}
-                          className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-lg uppercase tracking-wider flex items-center gap-1 shrink-0"
+                          onClick={() => handleModerateSubmission(sub.id, "rejected")}
+                          className="p-1.5 bg-rose-950/40 text-rose-400 border border-rose-900/40 rounded-lg hover:bg-rose-900/30 transition-all"
+                          title="Rejeter la collecte"
                         >
-                          <X className="w-4 h-4" /> Rejeter
+                          <X className="w-4 h-4" />
                         </button>
                         <button
-                          id={`approve-sub-${s.id}`}
-                          onClick={() => handleSubmissionAction(s.id, "approve")}
-                          className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-lg uppercase tracking-wider flex items-center gap-1 shrink-0"
+                          onClick={() => handleModerateSubmission(sub.id, "approved")}
+                          className="px-3 py-1.5 bg-emerald-600 text-slate-900 font-black text-xs rounded-lg hover:bg-emerald-500 transition-all flex items-center gap-1"
                         >
-                          <Check className="w-4 h-4" /> Valider
+                          <Check className="w-4 h-4" /> Valider (+Pts)
                         </button>
                       </div>
                     </div>
-
                   </div>
-                );
-              })}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* FILE 2 : VALIDATION DES RETRAITS MOBILE MONEY */}
+          <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800 p-6 rounded-2xl shadow-xl text-left">
+            <h3 className="text-sm font-black text-white mb-4 flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-emerald-400" />
+              Demandes de Virements MoMo / Celtiis en attente
+            </h3>
+
+            {withdrawalsQueue.length === 0 ? (
+              <p className="text-xs text-slate-500 italic py-4 border border-dashed border-slate-800 rounded-xl text-center bg-slate-950/30">
+                Aucun virement en attente de traitement bancaire.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {withdrawalsQueue.map((w) => (
+                  <div key={w.id} className="p-3 bg-slate-950 border border-slate-850 rounded-xl flex justify-between items-center text-xs">
+                    <div>
+                      <span className="font-extrabold text-slate-200 block">{w.provider} Cash • {w.phone}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">Valeur : <b className="text-emerald-400">{w.amountFcfa.toLocaleString()} FCFA</b> ({w.amountPts} pts)</span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => handleProcessWithdrawal(w.id, "failed")}
+                        className="px-2.5 py-1 text-[11px] bg-rose-950/30 border border-rose-900/40 text-rose-400 font-bold rounded-lg hover:bg-rose-950/50"
+                      >
+                        Échec
+                      </button>
+                      <button
+                        onClick={() => handleProcessWithdrawal(w.id, "completed")}
+                        className="px-2.5 py-1 text-[11px] bg-slate-100 text-slate-950 font-black rounded-lg hover:bg-white"
+                      >
+                        Virement Effectué ✓
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Administration parameters and withdrawals queue (Right Column) */}
-        <div className="lg:col-span-4 space-y-6">
-
-          {/* Manual payout / cashouts list */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-            <h4 className="font-extrabold text-slate-900 text-sm mb-3 flex items-center gap-1">
-              <CreditCard className="w-4 h-4 text-emerald-600" />
-              Demandes de Transferts MoMo / Celtiis ({withdrawalsQueue.length})
+        {/* COLONNE DROITE : PARAMÈTRES ET CONTRÔLE FRAUDE */}
+        <div className="space-y-6">
+          
+          {/* CONFIGURATEUR SYSTÈME */}
+          <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl text-left">
+            <h4 className="font-black text-sm text-white mb-4 flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-emerald-400" /> Paramètres Généraux
             </h4>
+            <form onSubmit={handleUpdateConfig} className="space-y-4">
+              <div className="flex flex-col space-y-1">
+                <label className="text-xs text-slate-300">Marge bénéficiaire plateforme (%)</label>
+                <input
+                  type="number"
+                  value={marginPercent}
+                  onChange={(e) => setMarginPercent(parseInt(e.target.value) || 0)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                />
+              </div>
 
-            <div className="space-y-3">
-              {withdrawalsQueue.length === 0 ? (
-                <div className="text-center text-xs text-slate-400 py-6 italic">Aucune de demande de virement en attente.</div>
+              <div className="flex flex-col space-y-1">
+                <label className="text-xs text-slate-300">Distance GPS Anti-Collusion (mètres)</label>
+                <input
+                  type="number"
+                  value={minGpsDistanceMeters}
+                  onChange={(e) => setMinGpsDistanceMeters(parseInt(e.target.value) || 0)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                />
+              </div>
+
+              {configSuccess && (
+                <p className="text-[11px] text-emerald-400 font-bold bg-emerald-950/20 border border-emerald-900/20 p-2 rounded-lg">{configSuccess}</p>
+              )}
+
+              <button
+                type="submit"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-slate-900 font-black text-xs py-2 rounded-xl transition-all"
+              >
+                Mettre à jour le système
+              </button>
+            </form>
+          </div>
+
+          {/* RÉSEAU DE SURVEILLANCE ANTI-FRAUDE */}
+          <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl text-left">
+            <h4 className="font-black text-sm text-rose-400 mb-3 flex items-center gap-1.5">
+              <ShieldAlert className="w-4 h-4 text-rose-500" />
+              Journal des Suspicion de Fraudes
+            </h4>
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {fraudLogsList.length === 0 ? (
+                <p className="text-[10px] text-slate-500 italic py-2 text-center">Aucun comportement suspect détecté.</p>
               ) : (
-                withdrawalsQueue.map((w) => (
-                  <div key={w.id} className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-2">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h6 className="font-extrabold text-xs text-slate-900">{w.agentName}</h6>
-                        <p className="text-[10px] text-slate-400 font-mono">{w.agentPhone}</p>
-                      </div>
-                      <span className="font-bold text-xs text-indigo-700">{w.pointsQuantity} points</span>
+                fraudLogsList.map((log, index) => (
+                  <div key={index} className="p-2.5 bg-rose-950/10 border border-rose-950/40 rounded-xl text-[11px] text-slate-300 space-y-1">
+                    <div className="flex justify-between items-center text-rose-400 font-bold">
+                      <span>{log.type === "gps_duplicate" ? "Doublon de Position" : "Alerte Télémétrie"}</span>
+                      <span className="text-[9px] font-mono text-slate-500">{new Date(log.createdAt || Date.now()).toLocaleTimeString()}</span>
                     </div>
-
-                    <div className="flex justify-between text-[11px] font-bold text-slate-700 bg-white p-1.5 rounded border">
-                      <span>MTN MoMo: {w.paymentMethod}</span>
-                      <span className="text-emerald-600 font-black">{w.amountFcfa.toLocaleString()} FCFA</span>
-                    </div>
-
-                    <button
-                      id={`pay-momo-done-${w.id}`}
-                      onClick={() => handleApproveWithdrawal(w.id)}
-                      className="w-full bg-slate-900 hover:bg-emerald-600 text-white font-black text-[9px] py-1.5 rounded uppercase tracking-wider transition-colors text-center"
-                    >
-                      Marquer Payé (Débiter)
-                    </button>
+                    <p className="text-slate-400 text-[10px] leading-relaxed">{log.details}</p>
                   </div>
                 ))
               )}
             </div>
           </div>
 
-          {/* Admin Platform Config Settings */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-            <h4 className="font-extrabold text-slate-900 text-sm mb-3 flex items-center gap-1">
-              <Sliders className="w-4 h-4 text-emerald-600" />
-              Ajuster les Paramètres Platforme
-            </h4>
-
-            <form onSubmit={handleSaveConfig} className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Marge Client (%)</label>
-                <input
-                  type="number"
-                  min="10"
-                  max="80"
-                  value={marginPercent}
-                  onChange={(e) => setMarginPercent(parseInt(e.target.value) || 40)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-900 font-black"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Distance Proximité Anti-Fraude (mètres)</label>
-                <input
-                  type="number"
-                  min="10"
-                  max="1000"
-                  value={minGpsDistanceMeters}
-                  onChange={(e) => setMinGpsDistanceMeters(parseInt(e.target.value) || 50)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-900 font-black"
-                />
-              </div>
-
-              {configSuccess && (
-                <p className="text-[11px] text-emerald-600 font-bold">{configSuccess}</p>
-              )}
-
-              <button
-                type="submit"
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-1.5 rounded transition-transform"
-              >
-                Mettre à jour
-              </button>
-            </form>
-          </div>
-
-          {/* Admin overall active users list */}
-          <div className="bg-slate-900 text-white p-5 rounded-2xl">
-            <h4 className="font-extrabold text-sm text-yellow-300 mb-3">Réseau des Agents actifs</h4>
-            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-              {usersList.filter(u => u.role === "agent").map(user => (
-                <div key={user.phone} className="p-2 bg-slate-800 rounded-xl flex justify-between items-center text-xs">
-                  <div>
-                    <span className="font-bold text-slate-100 block">{user.name}</span>
-                    <span className="text-[10px] text-slate-400 font-mono">{user.phone}</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-emerald-400 font-black">{user.points} pts</span>
-                    <span className="block text-[8px] font-mono text-slate-450 uppercase">{user.level} (Score: {user.score}%)</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
         </div>
 
       </div>
-
     </div>
   );
 }
