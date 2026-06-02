@@ -140,7 +140,7 @@ export default function AdminWorkspace({ onRefreshData }: AdminWorkspaceProps) {
       {/* Admin KPIs overall view */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
+        <div className="bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
           <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
             <TrendingUp className="w-6 h-6" />
           </div>

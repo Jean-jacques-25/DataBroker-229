@@ -218,10 +218,10 @@ export default function ClientWorkspace({
 
       {/* KPI row */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Missions Actives</p>
+        <div className="bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-100">
+          <p className="text-xs font-bold text-slate-100 uppercase tracking-wider">Missions Actives</p>
           <div className="flex items-baseline space-x-2 mt-1">
-            <span className="text-3xl font-black text-slate-900">{activeCount}</span>
+            <span className="text-3xl font-black text-white">{activeCount}</span>
             <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Surveillance</span>
           </div>
         </div>
