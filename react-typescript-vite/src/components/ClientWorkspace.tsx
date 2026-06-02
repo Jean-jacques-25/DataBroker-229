@@ -1,28 +1,22 @@
 import React, { useState } from "react";
-import {
-  Sparkles,
-  Layers,
-  FileSpreadsheet,
-  CheckCircle,
-  Clock,
-  PlusCircle,
-  Plus,
-  Trash,
-  Info,
-  DollarSign,
-  Download,
-  MapPin,
-  List
+import { 
+  PlusCircle, 
+  BarChart3, 
+  Database, 
+  Layers, 
+  Filter, 
+  Download, 
+  CheckCircle2, 
+  FileSpreadsheet, 
+  TrendingUp, 
+  MapPin 
 } from "lucide-react";
-import { Mission, MissionField, FieldType, UserRole, MissionStatus } from "../types";
+import { Mission, Submission, User, FieldType, UserRole } from "../types";
 
 interface ClientWorkspaceProps {
-  currentUser: {
-    phone: string;
-    name: string;
-  };
+  currentUser: User;
   missions: Mission[];
-  submissions: any[];
+  submissions: Submission[];
   onRefreshData: () => void;
 }
 
@@ -32,568 +26,452 @@ export default function ClientWorkspace({
   submissions,
   onRefreshData
 }: ClientWorkspaceProps) {
-  // AI assist states
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [aiError, setAiError] = useState("");
+  // Navigation interne
+  const [activeTab, setActiveTab] = useState<"campaigns" | "create" | "data">("campaigns");
 
-  // Mission Creator parameters
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [totalRequired, setTotalRequired] = useState(10);
-  const [budgetAgentFcfa, setBudgetAgentFcfa] = useState(1200);
-  const [zoneType, setZoneType] = useState<"city" | "market" | "radius" | "any">("city");
-  const [zoneName, setZoneName] = useState("Cotonou");
-  const [zoneLat, setZoneLat] = useState(6.3654);
-  const [zoneLng, setZoneLng] = useState(2.4183);
-  const [zoneRadius, setZoneRadius] = useState(5.0);
-
-  // Dynamic fields list
-  const [fields, setFields] = useState<MissionField[]>([
-    { id: "f-1", type: FieldType.TEXT, label: "Lieu exact / Nom du point de vente", required: true },
-    { id: "f-2", type: FieldType.NUMBER, label: "Prix relevé (FCFA)", required: true },
-    { id: "f-3", type: FieldType.PHOTO, label: "Photo d'étalage en situation réelle", required: true },
-    { id: "f-4", type: FieldType.GPS, label: "Point de validation géographique", required: true }
+  // Formulaire de création de campagne
+  const [campaignTitle, setCampaignTitle] = useState("");
+  const [campaignDesc, setCampaignDesc] = useState("");
+  const [campaignZone, setCampaignZone] = useState("Cotonou");
+  const [requiredSubmissions, setRequiredSubmissions] = useState(10);
+  const [budgetFcfa, setBudgetFcfa] = useState(5000);
+  const [requirePhoto, setRequirePhoto] = useState(true);
+  
+  // Champs dynamiques
+  const [fields, setFields] = useState<Array<{ id: string; label: string; type: FieldType; required: boolean }>>([
+    { id: "f1", label: "Nom du point de vente", type: FieldType.SHORT_TEXT, required: true }
   ]);
 
-  // Support parameter addition
-  const [newFieldLabel, setNewFieldLabel] = useState("");
-  const [newFieldType, setNewFieldType] = useState<FieldType>(FieldType.TEXT);
-  const [newFieldRequired, setNewFieldRequired] = useState(true);
-  const [newFieldOptionsString, setNewFieldOptionsString] = useState("");
+  const [formError, setFormError] = useState("");
+  const [formSuccess, setFormSuccess] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
 
-  const [createError, setCreateError] = useState("");
-  const [createSuccess, setCreateSuccess] = useState("");
+  // Filtrage de la base de données des rapports acquis
+  const [selectedMissionFilter, setSelectedMissionFilter] = useState("");
 
   const handleAddField = () => {
-    if (!newFieldLabel) return;
-    const fId = `f-${Date.now()}`;
-    const opts = newFieldOptionsString ? newFieldOptionsString.split(",").map((x) => x.trim()) : undefined;
-    
-    setFields([
-      ...fields,
-      { id: fId, type: newFieldType, label: newFieldLabel, required: newFieldRequired, options: opts }
-    ]);
-
-    setNewFieldLabel("");
-    setNewFieldOptionsString("");
+    const newId = `f_${Date.now()}`;
+    setFields([...fields, { id: newId, label: "", type: FieldType.SHORT_TEXT, required: true }]);
   };
 
-  const handleRemoveField = (id: string) => {
-    setFields(fields.filter((f) => f.id !== id));
+  const handleRemoveField = (index: number) => {
+    if (fields.length <= 1) return;
+    setFields(fields.filter((_, i) => i !== index));
   };
 
-  // Trigger Gemini dynamic API intelligence assist
-  const handleAiSuggest = async () => {
-    if (!aiPrompt) {
-      setAiError("Veuillez formuler votre demande d'enquête (ex: 'Sondage prix huile à Cotonou').");
-      return;
-    }
-
-    setIsAiLoading(true);
-    setAiError("");
-
-    try {
-      const resp = await fetch("/api/missions/ai-suggest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: aiPrompt, clientCity: zoneName })
-      });
-
-      if (!resp.ok) {
-        throw new Error("L'IA n'est pas disponible pour l'instant.");
-      }
-
-      const parsed = await resp.json();
-      
-      // Map AI response to states
-      setTitle(parsed.title || "");
-      setDescription(parsed.description || "");
-      if (parsed.zone) {
-        setZoneType(parsed.zone.type || "city");
-        setZoneName(parsed.zone.name || "Cotonou");
-        setZoneLat(parsed.zone.lat || 6.36);
-        setZoneLng(parsed.zone.lng || 2.44);
-        setZoneRadius(parsed.zone.radiusKm || 5.0);
-      }
-      setTotalRequired(parsed.totalRequired || 10);
-      setBudgetAgentFcfa(parsed.budgetAgentFcfa || 1200);
-      if (parsed.fields && parsed.fields.length > 0) {
-        setFields(parsed.fields);
-      }
-
-      setCreateSuccess("IA assiste : Les champs du questionnaire et tarifs ont été pré-remplis !");
-      setTimeout(() => setCreateSuccess(""), 4000);
-
-    } catch (err: any) {
-      setAiError(err.message || "Erreur lors de la génération par l'IA.");
-    } finally {
-      setIsAiLoading(false);
-    }
+  const handleFieldChange = (index: number, key: string, value: any) => {
+    const updated = [...fields];
+    updated[index] = { ...updated[index], [key]: value };
+    setFields(updated);
   };
 
-  // Create & Register the newly built mission
-  const handleCreateMission = async (e: React.FormEvent) => {
+  const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
-    setCreateError("");
-    setCreateSuccess("");
+    setFormError("");
+    setFormSuccess("");
 
-    if (!title || !description) {
-      setCreateError("Le titre et la description détaillée de la mission sont indispensables.");
+    if (!campaignTitle || !campaignDesc) {
+      setFormError("Veuillez renseigner le titre et la description de la campagne.");
       return;
     }
 
-    if (fields.length === 0) {
-      setCreateError("Veuillez configurer au moins un champ de questionnaire terrain.");
+    // Validation des champs vides
+    if (fields.some(f => !f.label.trim())) {
+      setFormError("Tous les libellés de votre questionnaire doivent être remplis.");
       return;
     }
 
-    const zone = {
-      type: zoneType,
-      name: zoneName,
-      lat: zoneLat,
-      lng: zoneLng,
-      radiusKm: zoneRadius
-    };
-
+    setIsCreating(true);
     try {
       const resp = await fetch("/api/missions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title,
-          description,
           clientPhone: currentUser.phone,
           clientName: currentUser.name,
-          zone,
-          fields,
-          totalRequired,
-          budgetAgentFcfa
+          title: campaignTitle,
+          description: campaignDesc,
+          zoneName: campaignZone,
+          totalRequired: requiredSubmissions,
+          budgetTotalFcfa: budgetFcfa,
+          requirePhoto,
+          fields
         })
       });
 
-      const resData = await resp.json();
-      if (!resp.ok) {
-        setCreateError(resData.error || "Echec du dépôt.");
-      } else {
-        setCreateSuccess("Mission enregistrée avec succès ! Elle est en attente de validation de paiement.");
-        onRefreshData();
-        // Reset Creator
-        setTitle("");
-        setDescription("");
-        setAiPrompt("");
-      }
-    } catch (err) {
-      setCreateError("Erreur réseau.");
-    }
-  };
-
-  // Simulate payment processing
-  const handleSimulatePayment = async (mId: string) => {
-    try {
-      const resp = await fetch("/api/missions/pay-confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ missionId: mId })
-      });
       if (resp.ok) {
+        setFormSuccess("Votre campagne a été lancée ! Elle est désormais visible par les Agents.");
+        setCampaignTitle("");
+        setCampaignDesc("");
+        setFields([{ id: "f1", label: "Nom du point de vente", type: FieldType.SHORT_TEXT, required: true }]);
         onRefreshData();
+        setTimeout(() => setActiveTab("campaigns"), 1500);
+      } else {
+        const d = await resp.json();
+        setFormError(d.message || "Erreur lors de la création.");
       }
-    } catch (err) {
-      console.warn(err);
+    } catch {
+      setFormError("Erreur réseau. Impossible de contacter le serveur.");
+    } finally {
+      setIsCreating(false);
     }
   };
 
-  const clientMissions = missions.filter((m) => m.clientPhone === currentUser.phone);
-  const activeCount = clientMissions.filter((m) => m.status === MissionStatus.ACTIVE).length;
-  const completedCount = clientMissions.filter((m) => m.status === MissionStatus.TERMINEE).length;
-  const pendingPaymentCount = clientMissions.filter((m) => m.status === MissionStatus.EN_ATTENTE_PAIEMENT).length;
-
-  // Margin percent calculation
-  const marginFraction = 1 - 0.40; // DB default margins 40%
-  const computedPriceClient = Math.round((budgetAgentFcfa * totalRequired) / marginFraction);
+  // Calculs KPI pour le client
+  const clientMissions = missions.filter(m => m.clientPhone === currentUser.phone);
+  const totalSpent = clientMissions.reduce((acc, m) => acc + m.budgetTotalFcfa, 0);
+  
+  const clientSubmissions = submissions.filter(s => 
+    clientMissions.some(m => m.id === s.missionId) && s.status === "approved"
+  );
 
   return (
-    <div className="flex flex-col space-y-6">
-
-      {/* KPI row */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-slate-900 p-5 rounded-2xl shadow-sm border border-slate-100">
-          <p className="text-xs font-bold text-slate-100 uppercase tracking-wider">Missions Actives</p>
-          <div className="flex items-baseline space-x-2 mt-1">
-            <span className="text-3xl font-black text-white">{activeCount}</span>
-            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Surveillance</span>
-          </div>
-        </div>
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Missions Complétées</p>
-          <h3 className="text-3xl font-black text-slate-900 mt-1">{completedCount}</h3>
-        </div>
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">En attente Paiement</p>
-          <h3 className="text-3xl font-black text-yellow-600 mt-1">{pendingPaymentCount}</h3>
-        </div>
-        <div className="bg-[#121b15] text-white p-5 rounded-2xl shadow-xl flex flex-col justify-between">
-          <div>
-            <p className="text-[10px] font-black uppercase text-emerald-400 tracking-wider">Frais de plateforme</p>
-            <h3 className="text-xl font-black tracking-tight mt-1">Marge Client incluse: 40%</h3>
-          </div>
-          <p className="text-[9px] text-slate-405 italic mt-1 font-mono">
-            Rapports de données brutes téléchargeables au format Excel (CSV).
-          </p>
-        </div>
+    <div className="min-h-screen bg-[#0B0F19] text-slate-100 p-4 md:p-8">
+      
+      {/* ONGLETS DE NAVIGATION ESPACE CLIENT */}
+      <div className="flex border-b border-slate-800/80 mb-8 max-w-md bg-slate-950 p-1 rounded-xl border border-slate-850">
+        <button
+          onClick={() => setActiveTab("campaigns")}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all w-full justify-center ${
+            activeTab === "campaigns" ? "bg-slate-900 text-emerald-400 shadow" : "text-slate-400 hover:text-white"
+          }`}
+        >
+          <BarChart3 className="w-4 h-4" /> Suivi
+        </button>
+        <button
+          onClick={() => setActiveTab("create")}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all w-full justify-center ${
+            activeTab === "create" ? "bg-slate-900 text-emerald-400 shadow" : "text-slate-400 hover:text-white"
+          }`}
+        >
+          <PlusCircle className="w-4 h-4" /> Lancer une Campagne
+        </button>
+        <button
+          onClick={() => setActiveTab("data")}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all w-full justify-center ${
+            activeTab === "data" ? "bg-slate-900 text-emerald-400 shadow" : "text-slate-400 hover:text-white"
+          }`}
+        >
+          <Database className="w-4 h-4" /> Rapports Acquis
+        </button>
       </div>
 
-      {/* Create Mission Grid layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-        {/* Creator panel (Left Column) */}
-        <div className="lg:col-span-8 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-6">
-          <div>
-            <h4 className="font-extrabold text-slate-900 text-lg flex items-center gap-1.5">
-              <PlusCircle className="w-5 h-5 text-emerald-600" />
-              Créer une nouvelle mission terrain au Bénin
-            </h4>
-            <p className="text-slate-500 text-xs mt-1">
-              Rédigez votre besoin en texte libre et laissez l'IA générer automatiquement le formulaire terrain.
-            </p>
-          </div>
-
-          {/* Prompt Assist input */}
-          <div className="bg-slate-55 bg-indigo-50/50 border border-slate-200 rounded-xl p-4 space-y-3">
-            <label className="block text-xs font-black text-slate-700 flex items-center gap-1">
-              <Sparkles className="w-4 h-4 text-emerald-600" />
-              Générateur Intelligent de Relevé Terrain (Recommandé)
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="ai-prompt-input"
-                type="text"
-                placeholder="Ex: Je veux auditer le prix de l'huile d'arachide de marque 'Auri' sur Cotonou ainsi que la présence de concurrents."
-                value={aiPrompt}
-                onChange={(e) => setAiPrompt(e.target.value)}
-                className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-emerald-600 focus:ring-1 focus:ring-emerald-500 shadow-sm"
-              />
-              <button
-                type="button"
-                onClick={handleAiSuggest}
-                disabled={isAiLoading}
-                className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 rounded-lg gap-1 flex items-center shrink-0 transition-colors shadow-sm"
-              >
-                {isAiLoading ? "Analyse IA..." : "Suggérer par IA ✨"}
-              </button>
+      {/* CONTENU : 1. SUIVI & STATISTIQUES */}
+      {activeTab === "campaigns" && (
+        <div className="space-y-8 animate-fade-in">
+          {/* Cartes KPI */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-5 bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-2xl text-left">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Campagnes Ouvertes</span>
+              <div className="text-2xl font-black text-white mt-1">{clientMissions.length}</div>
+              <span className="text-[10px] text-emerald-400 flex items-center gap-1 mt-1 font-medium">
+                <TrendingUp className="w-3 h-3" /> Déploiement national
+              </span>
             </div>
-            {aiError && <p className="text-[10px] text-rose-600 font-bold">{aiError}</p>}
+            <div className="p-5 bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-2xl text-left">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Rapports Certifiés</span>
+              <div className="text-2xl font-black text-emerald-400 mt-1">{clientSubmissions.length}</div>
+              <span className="text-[10px] text-slate-400 block mt-1">Données validées par modération</span>
+            </div>
+            <div className="p-5 bg-slate-900/60 backdrop-blur-md border border-slate-800 rounded-2xl text-left">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Budget Engagé</span>
+              <div className="text-2xl font-black text-white mt-1">{totalSpent.toLocaleString()} <span className="text-xs text-slate-400">FCFA</span></div>
+              <span className="text-[10px] text-amber-400 block mt-1">Garantie DataBroker229</span>
+            </div>
           </div>
 
-          {/* Form details */}
-          <form onSubmit={handleCreateMission} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Titre de la mission *</label>
+          {/* Tableau de suivi des campagnes */}
+          <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 p-6 rounded-2xl shadow-xl text-left">
+            <h3 className="text-base font-black text-white mb-4 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-emerald-400" /> État d'avancement de vos projets
+            </h3>
+            
+            {clientMissions.length === 0 ? (
+              <div className="p-8 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-xl bg-slate-950/30">
+                Vous n'avez lancé aucune campagne de collecte pour l'instant.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800">
+                    <tr>
+                      <th className="p-3">Campagne</th>
+                      <th className="p-3">Zone géographique</th>
+                      <th className="p-3">Progression des Rapports</th>
+                      <th className="p-3">Budget</th>
+                      <th className="p-3">Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/40">
+                    {clientMissions.map((m) => {
+                      const approvedCount = submissions.filter(s => s.missionId === m.id && s.status === "approved").length;
+                      const pct = Math.min(100, Math.round((approvedCount / m.totalRequired) * 100));
+                      
+                      return (
+                        <tr key={m.id} className="hover:bg-slate-950/40 transition-colors">
+                          <td className="p-3 font-bold text-white max-w-[180px] truncate">{m.title}</td>
+                          <td className="p-3">
+                            <span className="px-2 py-0.5 bg-slate-950 border border-slate-800 text-slate-300 rounded-md inline-flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-emerald-500" /> {m.zoneName}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-24 bg-slate-950 h-2 rounded-full border border-slate-800 overflow-hidden">
+                                <div className="bg-emerald-500 h-2 rounded-full" style={{ width: `${pct}%` }} />
+                              </div>
+                              <span className="font-mono font-bold text-slate-200">{approvedCount}/{m.totalRequired} ({pct}%)</span>
+                            </div>
+                          </td>
+                          <td className="p-3 font-mono font-bold text-emerald-400">{m.budgetTotalFcfa.toLocaleString()} FCFA</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                              m.status === "active" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-slate-800 text-slate-400"
+                            }`}>
+                              {m.status === "active" ? "En cours" : "Clôturée"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* CONTENU : 2. CONFIGURATEUR DE CAMPAGNE (QUESTIONNAIRE) */}
+      {activeTab === "create" && (
+        <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 p-6 rounded-2xl shadow-xl max-w-2xl mx-auto text-left animate-fade-in">
+          <div className="mb-6">
+            <h3 className="text-base font-black text-white flex items-center gap-2">
+              <PlusCircle className="w-5 h-5 text-emerald-400" /> Configurer une nouvelle campagne de collecte
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">Établissez votre cahier des charges pour les Agents sur le terrain.</p>
+          </div>
+
+          <form onSubmit={handleCreateCampaign} className="space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex flex-col space-y-1">
+                <label className="text-xs font-bold text-slate-300">Intitulé du projet</label>
                 <input
                   type="text"
-                  required
-                  placeholder="Ex : Audit de prix Huile Dantokpa"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:outline-emerald-600 focus:ring-1"
+                  placeholder="Ex: Disponibilité Ciment Bouclier"
+                  value={campaignTitle}
+                  onChange={(e) => setCampaignTitle(e.target.value)}
+                  className="w-full bg-slate-950 text-xs text-white border border-slate-800 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Nombre de collectes souhaité *</label>
-                <input
-                  type="number"
-                  min="5"
-                  max="100"
-                  required
-                  value={totalRequired}
-                  onChange={(e) => setTotalRequired(parseInt(e.target.value) || 10)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:outline-emerald-600"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Description & Consignes détaillées pour les agents *</label>
-              <textarea
-                required
-                rows={3}
-                placeholder="Expliquez clairement ce que l'agent doit faire sur place, les marques à chercher, etc."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Zone Géographique</label>
+              <div className="flex flex-col space-y-1">
+                <label className="text-xs font-bold text-slate-300">Zone géographique ciblée (Bénin)</label>
                 <select
-                  value={zoneType}
-                  onChange={(e: any) => setZoneType(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-900"
+                  value={campaignZone}
+                  onChange={(e) => setCampaignZone(e.target.value)}
+                  className="w-full bg-slate-950 text-xs text-white font-bold border border-slate-800 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 >
-                  <option value="city">Ville Entière</option>
-                  <option value="market">Marché Spécifique</option>
-                  <option value="radius">GPS + Rayon d'études</option>
-                  <option value="any">Bénin National</option>
+                  <option value="Cotonou">Cotonou Littoral 🇧🇯</option>
+                  <option value="Calavi">Abomey-Calavi</option>
+                  <option value="Porto-Novo">Porto-Novo Ouémé</option>
+                  <option value="Parakou">Parakou Borgou</option>
+                  <option value="Bohicon">Bohicon / Abomey Zou</option>
                 </select>
               </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Nom du Lieu / Ville</label>
+            <div className="flex flex-col space-y-1">
+              <label className="text-xs font-bold text-slate-300">Brève description de la mission</label>
+              <textarea
+                rows={3}
+                placeholder="Décrivez précisément ce que l'agent doit inspecter, vérifier ou compter..."
+                value={campaignDesc}
+                onChange={(e) => setCampaignDesc(e.target.value)}
+                className="w-full bg-slate-950 text-xs text-white border border-slate-800 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex flex-col space-y-1">
+                <label className="text-xs font-bold text-slate-300">Nombre de rapports requis (Quota)</label>
                 <input
-                  type="text"
-                  value={zoneName}
-                  onChange={(e) => setZoneName(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-900"
-                  placeholder="Ex : Cotonou..."
+                  type="number"
+                  value={requiredSubmissions}
+                  onChange={(e) => setRequiredSubmissions(parseInt(e.target.value) || 1)}
+                  className="w-full bg-slate-950 text-xs text-white border border-slate-800 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Budget Agent par collecte *
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="500"
-                    step="50"
-                    required
-                    value={budgetAgentFcfa}
-                    onChange={(e) => setBudgetAgentFcfa(parseInt(e.target.value) || 500)}
-                    className="w-full bg-white border border-slate-200 rounded pl-2 pr-12 py-1 text-xs text-slate-900 font-bold"
-                  />
-                  <span className="absolute right-2 top-1.5 text-[9px] font-mono text-slate-400">FCFA/coll</span>
-                </div>
+              <div className="flex flex-col space-y-1">
+                <label className="text-xs font-bold text-slate-300">Budget total alloué (FCFA)</label>
+                <input
+                  type="number"
+                  value={budgetFcfa}
+                  onChange={(e) => setBudgetFcfa(parseInt(e.target.value) || 1000)}
+                  className="w-full bg-slate-950 text-xs font-bold text-emerald-400 border border-slate-800 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
               </div>
             </div>
 
-            {/* Dynamic fields configuration list */}
-            <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-3">
-              <h5 className="text-xs font-black text-slate-900 flex items-center justify-between">
-                <span>Questionnaire de l'enquête terrain (Formulaire Dynamique)</span>
-                <span className="text-[10px] text-emerald-600 font-bold">{fields.length} champs au total</span>
-              </h5>
-
-              <div className="divide-y divide-slate-100 max-h-48 overflow-y-auto pr-1">
-                {fields.map((f, i) => (
-                  <div key={f.id} className="py-2 flex justify-between items-center text-xs">
-                    <div>
-                      <span className="font-extrabold text-slate-800">{i + 1}. {f.label}</span>
-                      <span className="text-[10px] text-slate-400 bg-slate-100 rounded px-1.5 ml-2 font-mono uppercase">{f.type}</span>
-                      {f.required && (
-                        <span className="text-[9px] text-emerald-600 font-bold ml-1 italic">(requis)</span>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveField(f.id)}
-                      className="p-1 text-rose-600 hover:bg-rose-50 rounded"
-                    >
-                      <Trash className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+            {/* Sécurité : Preuve Photo */}
+            <div className="flex items-center justify-between p-3.5 bg-slate-950 border border-slate-850 rounded-xl">
+              <div>
+                <span className="text-xs font-bold text-slate-200 block">Exiger une preuve photographique</span>
+                <span className="text-[10px] text-slate-500">Oblige l'agent à envoyer un cliché géolocalisé de l'étalage.</span>
               </div>
+              <input
+                type="checkbox"
+                checked={requirePhoto}
+                onChange={(e) => setRequirePhoto(e.target.checked)}
+                className="w-4 h-4 accent-emerald-500 rounded border-slate-800 bg-slate-950"
+              />
+            </div>
 
-              {/* Add form element inline widget */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-2 border-t pt-3 items-end">
-                <div className="md:col-span-2">
-                  <label className="block text-[10px] font-bold text-slate-500">Intitulé de la question</label>
-                  <input
-                    type="text"
-                    value={newFieldLabel}
-                    onChange={(e) => setNewFieldLabel(e.target.value)}
-                    placeholder="Ex: Prix bouteille 1L..."
-                    className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500">Type de donnée</label>
-                  <select
-                    value={newFieldType}
-                    onChange={(e: any) => setNewFieldType(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs"
-                  >
-                    <option value={FieldType.TEXT}>Texte libre</option>
-                    <option value={FieldType.NUMBER}>Nombre / Chiffre</option>
-                    <option value={FieldType.BOOLEAN}>Oui / Non</option>
-                    <option value={FieldType.SELECT}>Liste déroulante</option>
-                    <option value={FieldType.PHOTO}>Photo requise</option>
-                    <option value={FieldType.GPS}>Géolocalisation GPS</option>
-                  </select>
-                </div>
+            {/* CONSTRUCTEUR DE QUESTIONNAIRE DYNAMIQUE */}
+            <div className="p-4 bg-slate-950 border border-slate-850 rounded-xl space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-800/60 pb-2">
+                <span className="text-xs font-black text-slate-200 uppercase tracking-wide">Champs & Critères d'enquêtes</span>
                 <button
                   type="button"
                   onClick={handleAddField}
-                  className="w-full bg-slate-900 text-white font-bold text-xs py-1.5 rounded flex items-center justify-center gap-1 hover:bg-slate-800 transition-colors"
+                  className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
                 >
-                  <Plus className="w-3.5 h-3.5" /> Ajouter
+                  + Ajouter un critère
                 </button>
               </div>
 
-              {newFieldType === FieldType.SELECT && (
-                <div className="text-[10px] text-slate-500 bg-slate-50 p-2 rounded">
-                  <label className="block font-bold">Options pour la liste (séparées par une virgule)</label>
+              {fields.map((field, idx) => (
+                <div key={field.id} className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center bg-slate-900/50 p-2.5 rounded-lg border border-slate-800">
                   <input
                     type="text"
-                    placeholder="Choix A, Choix B, Choix C"
-                    value={newFieldOptionsString}
-                    onChange={(e) => setNewFieldOptionsString(e.target.value)}
-                    className="w-full bg-white border rounded px-2 py-1 mt-1 text-xs"
+                    placeholder="Ex: Prix constaté au kilo"
+                    value={field.label}
+                    onChange={(e) => handleFieldChange(idx, "label", e.target.value)}
+                    className="sm:col-span-1.5 bg-slate-950 text-xs text-white border border-slate-800 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
+                  <select
+                    value={field.type}
+                    onChange={(e) => handleFieldChange(idx, "type", e.target.value)}
+                    className="bg-slate-950 text-xs text-white border border-slate-800 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  >
+                    <option value={FieldType.SHORT_TEXT}>Texte court</option>
+                    <option value={FieldType.LONG_TEXT}>Rapport détaillé</option>
+                    <option value={FieldType.MULTIPLE_CHOICE}>Choix Oui / Non</option>
+                  </select>
+                  <button
+                    type="button"
+                    disabled={fields.length === 1}
+                    onClick={() => handleRemoveField(idx)}
+                    className="text-[11px] font-bold text-rose-400 hover:text-rose-300 disabled:opacity-30"
+                  >
+                    Supprimer
+                  </button>
                 </div>
-              )}
+              ))}
             </div>
 
-            {/* Price simulation box */}
-            <div className="bg-slate-900 text-white rounded-xl p-4 flex flex-col md:flex-row justify-between items-center gap-4">
-              <div>
-                <p className="text-xs text-slate-400">Tarification officielle DataBroker229</p>
-                <p className="text-[10px] text-slate-450 italic">Calcul : (Budget collectes {totalRequired} * {budgetAgentFcfa} FCFA) + Marge plateforme 40%</p>
-              </div>
-              <div className="text-right">
-                <span className="text-xs font-bold text-emerald-400 uppercase">Devis estimatif global</span>
-                <h4 className="text-2xl font-black text-yellow-300 italic">
-                  {computedPriceClient.toLocaleString()} <span className="text-sm font-normal text-slate-305">FCFA</span>
-                </h4>
-              </div>
-            </div>
-
-            {createError && (
-              <p className="text-xs font-bold text-rose-600 bg-rose-50 p-2 border border-rose-200 rounded">
-                {createError}
-              </p>
-            )}
-
-            {createSuccess && (
-              <p className="text-xs font-bold text-emerald-600 bg-emerald-50 p-2 border border-emerald-200 rounded">
-                {createSuccess}
-              </p>
-            )}
+            {formError && <p className="text-xs font-bold text-rose-400 bg-rose-950/20 p-3 rounded-xl border border-rose-900/30">{formError}</p>}
+            {formSuccess && <p className="text-xs font-bold text-emerald-400 bg-emerald-950/20 p-3 rounded-xl border border-emerald-900/30">{formSuccess}</p>}
 
             <button
               type="submit"
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-slate-900 font-extrabold text-xs py-3 rounded-lg uppercase tracking-widest block text-center transition-all shadow-md"
+              disabled={isCreating}
+              className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-900 font-black text-xs py-3 rounded-xl transition-all shadow-lg shadow-emerald-950/20"
             >
-              Envoyer la Mission
+              {isCreating ? "Déploiement en cours..." : "Lancer et financer la campagne"}
             </button>
           </form>
         </div>
+      )}
 
-        {/* Client's Missions list (Right Column) */}
-        <div className="lg:col-span-4 space-y-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-            <h4 className="font-extrabold text-slate-900 text-sm mb-3 flex items-center gap-1">
-              <List className="w-4 h-4 text-emerald-600" /> Vos Enquêtes en cours
-            </h4>
+      {/* CONTENU : 3. ACCÈS AUX RAPPORTS ET BASES DE DONNÉES ACQUISES */}
+      {activeTab === "data" && (
+        <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 p-6 rounded-2xl shadow-xl text-left space-y-6 animate-fade-in">
+          <div className="sm:flex justify-between items-center gap-4">
+            <div>
+              <h3 className="text-base font-black text-white flex items-center gap-2">
+                <Database className="w-5 h-5 text-emerald-400" /> Base de données des rapports acquis
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">Consultez et exportez les rapports validés par notre équipe de modération.</p>
+            </div>
 
+            {/* Filtre par projet */}
+            <div className="flex items-center gap-2 mt-3 sm:mt-0">
+              <Filter className="w-4 h-4 text-slate-500" />
+              <select
+                value={selectedMissionFilter}
+                onChange={(e) => setSelectedMissionFilter(e.target.value)}
+                className="bg-slate-950 text-xs border border-slate-800 text-white px-3 py-2 rounded-xl focus:outline-none"
+              >
+                <option value="">Toutes les campagnes</option>
+                {clientMissions.map(m => (
+                  <option key={m.id} value={m.id}>{m.title}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Liste des extractions */}
+          {clientSubmissions.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-xl bg-slate-950/30">
+              Aucun rapport certifié n'est disponible pour l'extraction à ce jour.
+            </div>
+          ) : (
             <div className="space-y-3">
-              {clientMissions.length === 0 ? (
-                <div className="text-center text-xs text-slate-400 py-6 italic">Vous n'avez pas encore déposé d'enquêtes.</div>
-              ) : (
-                clientMissions.map((m) => {
-                  const completedPct = Math.round((m.collectedCount / m.totalRequired) * 100);
-                  const isPendingPayment = m.status === MissionStatus.EN_ATTENTE_PAIEMENT;
+              <div className="flex justify-end">
+                <button
+                  onClick={() => alert("Génération du tableur Excel / CSV de vos données béninoises...")}
+                  className="bg-slate-100 hover:bg-white text-slate-950 font-black text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 shadow transition-all"
+                >
+                  <FileSpreadsheet className="w-4 h-4" /> Exporter la sélection (.CSV)
+                </button>
+              </div>
 
-                  return (
-                    <div key={m.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                      <div className="flex justify-between items-start">
-                        <h5 className="font-extrabold text-xs text-slate-900 truncate pr-2" title={m.title}>
-                          {m.title}
-                        </h5>
-                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${
-                          m.status === MissionStatus.ACTIVE ? "bg-emerald-100 text-emerald-800" :
-                          m.status === MissionStatus.TERMINEE ? "bg-purple-100 text-purple-800" :
-                          m.status === MissionStatus.EN_ATTENTE_PAIEMENT ? "bg-amber-100 text-amber-800" :
-                          "bg-slate-200 text-slate-800"
-                        }`}>
-                          {m.status === MissionStatus.ACTIVE ? "Active" :
-                           m.status === MissionStatus.TERMINEE ? "Terminée" :
-                           m.status === MissionStatus.EN_ATTENTE_PAIEMENT ? "Impayée" : m.status}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between text-[10px] text-slate-500">
-                        <span>Localisation : 📍 {m.zone.name}</span>
-                        <span>Points/Relevé : <b>{m.pointsPerCollect} pts</b></span>
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-[10px] font-bold text-slate-600">
-                          <span>Progress : {m.collectedCount}/{m.totalRequired}</span>
-                          <span>{completedPct}%</span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {clientSubmissions
+                  .filter(s => !selectedMissionFilter || s.missionId === selectedMissionFilter)
+                  .map((sub) => {
+                    const currentM = missions.find(m => m.id === sub.missionId);
+                    return (
+                      <div key={sub.id} className="p-4 bg-slate-950 border border-slate-850 rounded-xl space-y-3 relative overflow-hidden">
+                        <div className="flex justify-between items-start border-b border-slate-900 pb-2">
+                          <div>
+                            <span className="text-[10px] text-slate-500 block font-mono">ID: {sub.id}</span>
+                            <span className="text-xs font-bold text-slate-200">{currentM?.title}</span>
+                          </div>
+                          <span className="px-2 py-0.5 text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" /> Certifié
+                          </span>
                         </div>
-                        <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                          <div className="bg-emerald-500 h-1.5" style={{ width: `${completedPct}%` }}></div>
-                        </div>
-                      </div>
 
-                      {/* Control buttons */}
-                      <div className="flex gap-2 pt-1 border-t border-slate-200/50">
-                        {isPendingPayment ? (
-                          <button
-                            id={`pay-simulation-${m.id}`}
-                            onClick={() => handleSimulatePayment(m.id)}
-                            className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-slate-950 font-black text-[9px] py-1 rounded-md uppercase tracking-wide text-center"
-                          >
-                            💳 Payer ({m.totalCostClientFcfa.toLocaleString()} FCFA)
-                          </button>
-                        ) : (
-                          <a
-                            href={`/api/export/csv?missionId=${m.id}`}
-                            download
-                            className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-black text-[9px] py-1 rounded-md uppercase tracking-wide text-center flex items-center justify-center gap-1"
-                          >
-                            <Download className="w-3 h-3 text-emerald-400" /> Télécharger Données (CSV)
-                          </a>
+                        {/* Réponses dynamiques récoltées */}
+                        <div className="space-y-1.5 text-[11px]">
+                          {Object.entries(sub.answers).map(([fieldId, val]) => {
+                            const label = currentM?.fields.find(f => f.id === fieldId)?.label || fieldId;
+                            return (
+                              <p key={fieldId} className="text-slate-400">
+                                <b className="text-slate-300">{label} :</b> {val}
+                              </p>
+                            );
+                          })}
+                        </div>
+
+                        {/* Vignette photo si présente */}
+                        {sub.photoBase64 && (
+                          <div className="pt-2 border-t border-slate-900/60 flex items-center gap-3">
+                            <img src={sub.photoBase64} alt="Preuve terrain" className="w-14 h-10 object-cover rounded-md border border-slate-800" />
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              GPS: {sub.gpsLocation.lat.toFixed(4)}, {sub.gpsLocation.lng.toFixed(4)}
+                            </span>
+                          </div>
                         )}
                       </div>
-                    </div>
-                  );
-                })
-              )}
+                    );
+                  })}
+              </div>
             </div>
-          </div>
-
-          {/* Feedback list */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-            <h4 className="font-extrabold text-slate-900 text-sm mb-3">Dernières données reçues</h4>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {submissions.filter((s) => s.status === "approved" && missions.find((m) => m.id === s.missionId && m.clientPhone === currentUser.phone)).length === 0 ? (
-                <span className="text-xs text-slate-400 italic block text-center py-4">Aucun relevé validé sur le terrain.</span>
-              ) : (
-                submissions
-                  .filter((s) => s.status === "approved" && missions.find((m) => m.id === s.missionId && m.clientPhone === currentUser.phone))
-                  .map((s) => (
-                    <div key={s.id} className="p-2 bg-slate-50 border border-slate-200 rounded text-[11px] leading-relaxed">
-                      <div className="font-bold text-slate-850 flex justify-between items-center">
-                        <span>Agent: {s.agentName}</span>
-                        <span className="font-mono text-[9px] text-slate-400">{s.id}</span>
-                      </div>
-                      <p className="text-[10px] text-slate-500">{s.missionTitle}</p>
-                      
-                      {/* Answers overview */}
-                      <div className="mt-1 bg-white p-1 rounded border border-slate-100 divide-y divide-slate-50">
-                        {Object.entries(s.answers).map(([k, val]: any) => (
-                          <div key={k} className="flex justify-between py-0.5 text-[9px]">
-                            <span className="text-slate-400 font-medium">Réponse :</span>
-                            <span className="text-slate-705 font-bold">{val}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))
-              )}
-            </div>
-          </div>
+          )}
         </div>
-
-      </div>
+      )}
 
     </div>
   );
